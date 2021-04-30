@@ -1,0 +1,5 @@
+.vs/
+build/
+res/chart/*
+!res/chart/.gitkeep
+dist/
