@@ -4,6 +4,10 @@
 
 Run this together alongside SUSPlayer or your other favourite sliding universal score simulator.
 
+[Demo play](https://www.youtube.com/watch?v=xhxCB26Jqf4)
+
+![demo](images/demo.gif)
+
 ## Setup
 
 1. Check the releases page on github, download and unzip into your preferred folder.
@@ -20,7 +24,7 @@ Run this together alongside SUSPlayer or your other favourite sliding universal 
 
    > When using windows hotspot, ensure 'public' is enabled. If there are any other issues, try checking the "incoming rules" menu of windows firewall from the control panel.
 
-   > You may need grant firewall permissions the first time and then restart the program.
+   > You may need to grant firewall permissions the first time and then restart the program.
 
 5. Some URLs should be displayed on the command line window, try opening each one of them in your tablet device until you see the controller screen.
 
@@ -32,7 +36,7 @@ Run this together alongside SUSPlayer or your other favourite sliding universal 
 
 7. Open up SUSplayer or some other simulator and have fun!
 
-I also recommend using the "Add to home" feature for Safari / Chrome, it makes the controller fullscreen.
+I also recommend using the "Add to home" feature for Safari / Chrome, it makes the controller fullscreen. After that you can also use "guided access" mode to disable the iOS app switcher gestures.
 
 ![add to home](images/homescreen.png)
 
