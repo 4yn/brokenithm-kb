@@ -1,3 +1,5 @@
+#pragma warning(disable : 4267 4138)
+
 #include "BrokenithmServer.hpp"
 
 #include <thread>
@@ -53,11 +55,12 @@ uint64_t BrokenithmServer::get_controller_state()
 
 struct ConnectionData
 {
+    typedef uWS::WebSocket<false, true, ConnectionData> ConnectionDataSocket;
     static int s_connection_counter;
     static std::vector<ConnectionData *> s_connections;
 
     int m_uid;
-    uWS::WebSocket<false, true> *m_websocket;
+    ConnectionDataSocket *m_websocket;
 
     void static close_all_connections();
 
@@ -75,7 +78,7 @@ struct ConnectionData
         s_connections[m_uid] = nullptr;
     }
 
-    void save_socket(uWS::WebSocket<false, true> *websocket)
+    void save_socket(ConnectionDataSocket *websocket)
     {
         m_websocket = websocket;
     }
@@ -149,12 +152,17 @@ void BrokenithmServer::Impl::start_server()
             })
         .ws<ConnectionData>(
             "/ws",
-            {uWS::DISABLED,
-             16 * 1024 * 1024,
-             10,
-             16 * 1024 * 1024,
+            {uWS::DISABLED,    // compression
+             16 * 1024 * 1024, // maxPayloadLength
+             16,               // idleTimeout
+             16 * 1024 * 1024, // maxBackpressure
+             false,            // closeOnBackpressureLimit
+             false,            // resetIdleTimeoutOnSend
+             true,             // sendPingsAutomatically
+             0,                // maxLifetime
+             nullptr,          // upgrade
              // Open handler
-             [](auto *ws, auto *req) {
+             [](auto *ws) {
                  spdlog::info("Controller ID {} connected", ((ConnectionData *)ws->getUserData())->m_uid);
                  ((ConnectionData *)ws->getUserData())->save_socket(ws);
              },
@@ -181,26 +189,21 @@ void BrokenithmServer::Impl::start_server()
                      }
                  }
              },
-             // Drain handler
-             [](auto *ws) {},
-             // Ping handler
-             [](auto *ws) {},
-             // Pong handler
-             [](auto *ws) {},
+             nullptr, // Drain handler
+             nullptr, // Ping handler
+             nullptr, // Pong handler
              // Close handler
              [](auto *ws, int code, std::string_view message) {
                  spdlog::info("Controller ID {} disconnected", ((ConnectionData *)ws->getUserData())->m_uid);
              }})
-        .listen(
-            m_port,
-            [&](auto *token) {
-                if (token)
-                {
-                    spdlog::info("Server listening at port {}", m_port);
-                    m_running = true;
-                    m_uws_socket_token = token;
-                }
-            })
+        .listen(m_port, [&](auto *token) {
+            if (token)
+            {
+                spdlog::info("Server listening at port {}", m_port);
+                m_running = true;
+                m_uws_socket_token = token;
+            }
+        })
         .run();
 
     m_running = false;

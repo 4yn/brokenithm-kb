@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2019.
+ * Authored by Alex Hultman, 2018-2020.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +25,9 @@
 #include <string>
 #include <algorithm>
 #include <memory>
+#include <utility>
 
-#include "f2/function2.hpp"
+#include "MoveOnlyFunction.h"
 
 namespace uWS {
 
@@ -47,7 +48,7 @@ private:
     std::map<std::string, int> priority;
 
     /* List of handlers */
-    std::vector<fu2::unique_function<bool(HttpRouter *)>> handlers;
+    std::vector<MoveOnlyFunction<bool(HttpRouter *)>> handlers;
 
     /* Current URL cache */
     std::string_view currentUrl;
@@ -60,6 +61,8 @@ private:
         std::vector<std::unique_ptr<Node>> children;
         std::vector<uint32_t> handlers;
         bool isHighPriority;
+
+        Node(std::string name) : name(name) {}
     } root = {"rootNode"};
 
     /* Advance from parent to child, adding child if necessary */
@@ -71,7 +74,7 @@ private:
         }
 
         /* Insert sorted, but keep order if parent is root (we sort methods by priority elsewhere) */
-        std::unique_ptr<Node> newNode(new Node({child}));
+        std::unique_ptr<Node> newNode(new Node(child));
         newNode->isHighPriority = isHighPriority;
         return parent->children.emplace(std::upper_bound(parent->children.begin(), parent->children.end(), newNode, [parent, this](auto &a, auto &b) {
 
@@ -107,18 +110,24 @@ private:
 
     /* Set URL for router. Will reset any URL cache */
     inline void setUrl(std::string_view url) {
-        /* Remove / from input URL */
-        currentUrl = url.substr(std::min<unsigned int>((unsigned int) url.length(), 1));
+
+        /* Todo: URL may also start with "http://domain/" or "*", not only "/" */
+
+        /* We expect to stand on a slash */
+        currentUrl = url;
         urlSegmentTop = -1;
     }
 
     /* Lazily parse or read from cache */
-    inline std::string_view getUrlSegment(int urlSegment) {
+    inline std::pair<std::string_view, bool> getUrlSegment(int urlSegment) {
         if (urlSegment > urlSegmentTop) {
-            /* Return empty segment if we are out of URL or stack space, but never for first url segment */
+            /* Signal as STOP when we have no more URL or stack space */
             if (!currentUrl.length() || urlSegment > 99) {
-                return {};
+                return {{}, true};
             }
+
+            /* We always stand on a slash here, so step over it */
+            currentUrl.remove_prefix(1);
 
             auto segmentLength = currentUrl.find('/');
             if (segmentLength == std::string::npos) {
@@ -136,19 +145,22 @@ private:
                 urlSegmentTop++;
 
                 /* Update currentUrl */
-                currentUrl = currentUrl.substr(segmentLength + 1);
+                currentUrl = currentUrl.substr(segmentLength);
             }
         }
         /* In any case we return it */
-        return urlSegmentVector[urlSegment];
+        return {urlSegmentVector[urlSegment], false};
     }
 
     /* Executes as many handlers it can */
     bool executeHandlers(Node *parent, int urlSegment, USERDATA &userData) {
-        /* If we have no more URL and not on first round, return where we may stand */
-        if (urlSegment && !getUrlSegment(urlSegment).length()) {
+
+        auto [segment, isStop] = getUrlSegment(urlSegment);
+
+        /* If we are on STOP, return where we may stand */
+        if (isStop) {
             /* We have reached accross the entire URL with no stoppage, execute */
-            for (int handler : parent->handlers) {
+            for (uint32_t handler : parent->handlers) {
                 if (handlers[handler & HANDLER_MASK](this)) {
                     return true;
                 }
@@ -160,19 +172,19 @@ private:
         for (auto &p : parent->children) {
             if (p->name.length() && p->name[0] == '*') {
                 /* Wildcard match (can be seen as a shortcut) */
-                for (int handler : p->handlers) {
+                for (uint32_t handler : p->handlers) {
                     if (handlers[handler & HANDLER_MASK](this)) {
                         return true;
                     }
                 }
-            } else if (p->name.length() && p->name[0] == ':' && getUrlSegment(urlSegment).length()) {
+            } else if (p->name.length() && p->name[0] == ':' && segment.length()) {
                 /* Parameter match */
-                routeParameters.push(getUrlSegment(urlSegment));
+                routeParameters.push(segment);
                 if (executeHandlers(p.get(), urlSegment + 1, userData)) {
                     return true;
                 }
                 routeParameters.pop();
-            } else if (p->name == getUrlSegment(urlSegment)) {
+            } else if (p->name == segment) {
                 /* Static match */
                 if (executeHandlers(p.get(), urlSegment + 1, userData)) {
                     return true;
@@ -217,14 +229,14 @@ public:
     }
 
     /* Adds the corresponding entires in matching tree and handler list */
-    void add(std::vector<std::string> methods, std::string pattern, fu2::unique_function<bool(HttpRouter *)> &&handler, uint32_t priority = MEDIUM_PRIORITY) {
+    void add(std::vector<std::string> methods, std::string pattern, MoveOnlyFunction<bool(HttpRouter *)> &&handler, uint32_t priority = MEDIUM_PRIORITY) {
         for (std::string method : methods) {
             /* Lookup method */
             Node *node = getNode(&root, method, false);
             /* Iterate over all segments */
             setUrl(pattern);
-            for (int i = 0; getUrlSegment(i).length() || i == 0; i++) {
-                node = getNode(node, std::string(getUrlSegment(i)), priority == HIGH_PRIORITY);
+            for (int i = 0; !getUrlSegment(i).second; i++) {
+                node = getNode(node, std::string(getUrlSegment(i).first), priority == HIGH_PRIORITY);
             }
             /* Insert handler in order sorted by priority (most significant 1 byte) */
             node->handlers.insert(std::upper_bound(node->handlers.begin(), node->handlers.end(), (uint32_t) (priority | handlers.size())), (uint32_t) (priority | handlers.size()));

@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2019.
+ * Authored by Alex Hultman, 2018-2020.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@
 
 #include "PerMessageDeflate.h"
 
-#include "f2/function2.hpp"
+#include "MoveOnlyFunction.h"
 
 namespace uWS {
 
@@ -37,10 +37,10 @@ struct alignas(16) LoopData {
 private:
     std::mutex deferMutex;
     int currentDeferQueue = 0;
-    std::vector<fu2::unique_function<void()>> deferQueues[2];
+    std::vector<MoveOnlyFunction<void()>> deferQueues[2];
 
     /* Map from void ptr to handler */
-    std::map<void *, fu2::unique_function<void(Loop *)>> postHandlers, preHandlers;
+    std::map<void *, MoveOnlyFunction<void(Loop *)>> postHandlers, preHandlers;
 
 public:
     ~LoopData() {
@@ -53,12 +53,15 @@ public:
         delete [] corkBuffer;
     }
 
+    /* Be silent */
+    bool noMark = false;
+
     /* Good 16k for SSL perf. */
-    static const int CORK_BUFFER_SIZE = 16 * 1024;
+    static const unsigned int CORK_BUFFER_SIZE = 16 * 1024;
 
     /* Cork data */
     char *corkBuffer = new char[CORK_BUFFER_SIZE];
-    int corkOffset = 0;
+    unsigned int corkOffset = 0;
     void *corkedSocket = nullptr;
 
     /* Per message deflate data */

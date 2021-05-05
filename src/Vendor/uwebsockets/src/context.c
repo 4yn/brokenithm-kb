@@ -26,6 +26,10 @@ int default_ignore_data_handler(struct us_socket_t *s) {
 
 /* Shared with SSL */
 
+unsigned short us_socket_context_timestamp(int ssl, struct us_socket_context_t *context) {
+    return context->timestamp;
+}
+
 void us_listen_socket_close(int ssl, struct us_listen_socket_t *ls) {
     /* us_listen_socket_t extends us_socket_t so we close in similar ways */
     if (!us_socket_is_closed(0, &ls->s)) {
@@ -80,32 +84,63 @@ struct us_loop_t *us_socket_context_loop(int ssl, struct us_socket_context_t *co
     return context->loop;
 }
 
-/* Returns the deep copy, to be freed */
-const char *deep_str_copy(const char *src) {
-    if (!src) {
-        return src;
-    }
-    size_t len = strlen(src) + 1;
-    char *dst = malloc(len);
-    memcpy(dst, src, len);
-    return dst;
-}
-
 /* Not shared with SSL */
 
-struct us_socket_context_t *us_create_socket_context(int ssl, struct us_loop_t *loop, int context_ext_size, struct us_socket_context_options_t options) {
-    /* For ease of use we copy all passed strings here */
-    options.ca_file_name = deep_str_copy(options.ca_file_name);
-    options.cert_file_name = deep_str_copy(options.cert_file_name);
-    options.dh_params_file_name = deep_str_copy(options.dh_params_file_name);
-    options.key_file_name = deep_str_copy(options.key_file_name);
-    options.passphrase = deep_str_copy(options.passphrase);
-
+/* Add SNI context */
+void us_socket_context_add_server_name(int ssl, struct us_socket_context_t *context, const char *hostname_pattern, struct us_socket_context_options_t options) {
 #ifndef LIBUS_NO_SSL
     if (ssl) {
+        us_internal_ssl_socket_context_add_server_name((struct us_internal_ssl_socket_context_t *) context, hostname_pattern, options);
+    }
+#endif
+}
+
+/* Remove SNI context */
+void us_socket_context_remove_server_name(int ssl, struct us_socket_context_t *context, const char *hostname_pattern) {
+#ifndef LIBUS_NO_SSL
+    if (ssl) {
+        us_internal_ssl_socket_context_remove_server_name((struct us_internal_ssl_socket_context_t *) context, hostname_pattern);
+    }
+#endif
+}
+
+/* I don't like this one - maybe rename it to on_missing_server_name? */
+
+/* Called when SNI matching fails - not if a match could be made.
+ * You may modify the context by adding/removing names in this callback.
+ * If the correct name is added immediately in the callback, it will be used */
+void us_socket_context_on_server_name(int ssl, struct us_socket_context_t *context, void (*cb)(struct us_socket_context_t *, const char *hostname)) {
+#ifndef LIBUS_NO_SSL
+    if (ssl) {
+        us_internal_ssl_socket_context_on_server_name((struct us_internal_ssl_socket_context_t *) context, (void (*)(struct us_internal_ssl_socket_context_t *, const char *hostname)) cb);
+    }
+#endif
+}
+
+/* Todo: get native context from SNI pattern */
+
+void *us_socket_context_get_native_handle(int ssl, struct us_socket_context_t *context) {
+#ifndef LIBUS_NO_SSL
+    if (ssl) {
+        return us_internal_ssl_socket_context_get_native_handle((struct us_internal_ssl_socket_context_t *) context);
+    }
+#endif
+
+    /* There is no native handle for a non-SSL socket context */
+    return 0;
+}
+
+/* Options is currently only applicable for SSL - this will change with time (prefer_low_memory is one example) */
+struct us_socket_context_t *us_create_socket_context(int ssl, struct us_loop_t *loop, int context_ext_size, struct us_socket_context_options_t options) {
+#ifndef LIBUS_NO_SSL
+    if (ssl) {
+        /* This function will call us, again, with SSL = false and a bigger ext_size */
         return (struct us_socket_context_t *) us_internal_create_ssl_socket_context(loop, context_ext_size, options);
     }
 #endif
+
+    /* This path is taken once either way - always BEFORE whatever SSL may do LATER.
+     * context_ext_size will however be modified larger in case of SSL, to hold SSL extensions */
 
     struct us_socket_context_t *context = malloc(sizeof(struct us_socket_context_t) + context_ext_size);
     context->loop = loop;
@@ -113,26 +148,27 @@ struct us_socket_context_t *us_create_socket_context(int ssl, struct us_loop_t *
     context->iterator = 0;
     context->next = 0;
     context->ignore_data = default_ignore_data_handler;
-    context->options = options;
+
+    /* Begin at 0 */
+    context->timestamp = 0;
 
     us_internal_loop_link(loop, context);
+
+    /* If we are called from within SSL code, SSL code will make further changes to us */
     return context;
 }
 
 void us_socket_context_free(int ssl, struct us_socket_context_t *context) {
-    /* We also simply free every copied string here */
-    free((void *) context->options.ca_file_name);
-    free((void *) context->options.cert_file_name);
-    free((void *) context->options.dh_params_file_name);
-    free((void *) context->options.key_file_name);
-    free((void *) context->options.passphrase);
-
 #ifndef LIBUS_NO_SSL
     if (ssl) {
+        /* This function will call us again with SSL=false */
         us_internal_ssl_socket_context_free((struct us_internal_ssl_socket_context_t *) context);
         return;
     }
 #endif
+
+    /* This path is taken once either way - always AFTER whatever SSL may do BEFORE.
+     * This is the opposite order compared to when creating the context - SSL code is cleaning up before non-SSL */
 
     us_internal_loop_unlink(context->loop, context);
     free(context);
@@ -167,14 +203,14 @@ struct us_listen_socket_t *us_socket_context_listen(int ssl, struct us_socket_co
     return ls;
 }
 
-struct us_socket_t *us_socket_context_connect(int ssl, struct us_socket_context_t *context, const char *host, int port, int options, int socket_ext_size) {
+struct us_socket_t *us_socket_context_connect(int ssl, struct us_socket_context_t *context, const char *host, int port, const char *source_host, int options, int socket_ext_size) {
 #ifndef LIBUS_NO_SSL
     if (ssl) {
-        return (struct us_socket_t *) us_internal_ssl_socket_context_connect((struct us_internal_ssl_socket_context_t *) context, host, port, options, socket_ext_size);
+        return (struct us_socket_t *) us_internal_ssl_socket_context_connect((struct us_internal_ssl_socket_context_t *) context, host, port, source_host, options, socket_ext_size);
     }
 #endif
 
-    LIBUS_SOCKET_DESCRIPTOR connect_socket_fd = bsd_create_connect_socket(host, port, options);
+    LIBUS_SOCKET_DESCRIPTOR connect_socket_fd = bsd_create_connect_socket(host, port, source_host, options);
     if (connect_socket_fd == LIBUS_SOCKET_ERROR) {
         return 0;
     }
@@ -239,10 +275,10 @@ void us_socket_context_on_open(int ssl, struct us_socket_context_t *context, str
     context->on_open = on_open;
 }
 
-void us_socket_context_on_close(int ssl, struct us_socket_context_t *context, struct us_socket_t *(*on_close)(struct us_socket_t *s)) {
+void us_socket_context_on_close(int ssl, struct us_socket_context_t *context, struct us_socket_t *(*on_close)(struct us_socket_t *s, int code, void *reason)) {
 #ifndef LIBUS_NO_SSL
     if (ssl) {
-        us_internal_ssl_socket_context_on_close((struct us_internal_ssl_socket_context_t *) context, (struct us_internal_ssl_socket_t * (*)(struct us_internal_ssl_socket_t *)) on_close);
+        us_internal_ssl_socket_context_on_close((struct us_internal_ssl_socket_context_t *) context, (struct us_internal_ssl_socket_t * (*)(struct us_internal_ssl_socket_t *, int code, void *reason)) on_close);
         return;
     }
 #endif
@@ -292,6 +328,17 @@ void us_socket_context_on_end(int ssl, struct us_socket_context_t *context, stru
 #endif
 
     context->on_end = on_end;
+}
+
+void us_socket_context_on_connect_error(int ssl, struct us_socket_context_t *context, struct us_socket_t *(*on_connect_error)(struct us_socket_t *s, int code)) {
+#ifndef LIBUS_NO_SSL
+    if (ssl) {
+        us_internal_ssl_socket_context_on_connect_error((struct us_internal_ssl_socket_context_t *) context, (struct us_internal_ssl_socket_t * (*)(struct us_internal_ssl_socket_t *, int)) on_connect_error);
+        return;
+    }
+#endif
+    
+    context->on_connect_error = on_connect_error;
 }
 
 void *us_socket_context_ext(int ssl, struct us_socket_context_t *context) {

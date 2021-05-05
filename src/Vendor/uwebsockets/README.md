@@ -1,6 +1,6 @@
 # Repackaged uWebsockets library
 
-Source was obtained from [uSockets](https://github.com/uNetworking/uSockets) and [uWebSockets](https://github.com/uNetworking/uWebSockets) and repackaged with a build system.
+Source was obtained from [uSockets v0.7.1](https://github.com/uNetworking/uSockets/tree/v0.7.1) and [uWebSockets v19.2.0](https://github.com/uNetworking/uWebSockets/tree/v19.2.0) and repackaged with build system configuration.
 
 # Original uWebsockets README.md
 

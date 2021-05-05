@@ -1,5 +1,5 @@
 /*
- * Authored by Alex Hultman, 2018-2019.
+ * Authored by Alex Hultman, 2018-2020.
  * Intellectual property of third-party.
 
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +21,16 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <string_view>
 
 namespace uWS {
+
+/* We should not overcomplicate these */
+const std::string_view ERR_TOO_BIG_MESSAGE("Received too big message");
+const std::string_view ERR_WEBSOCKET_TIMEOUT("WebSocket timed out from inactivity");
+const std::string_view ERR_INVALID_TEXT("Received invalid UTF-8");
+const std::string_view ERR_TOO_BIG_MESSAGE_INFLATION("Received too big message, or other inflation error");
+const std::string_view ERR_INVALID_CLOSE_PAYLOAD("Received invalid close payload");
 
 enum OpCode : unsigned char {
     TEXT = 1,
@@ -49,7 +57,7 @@ public:
     struct State {
         unsigned int wantsHead : 1;
         unsigned int spillLength : 4;
-        int opStack : 2; // -1, 0, 1
+        signed int opStack : 2; // -1, 0, 1
         unsigned int lastFin : 1;
 
         // 15 bytes
@@ -151,20 +159,23 @@ struct CloseFrame {
 };
 
 static inline CloseFrame parseClosePayload(char *src, size_t length) {
-    CloseFrame cf = {};
+    /* If we get no code or message, default to reporting 1005 no status code present */
+    CloseFrame cf = {1005, nullptr, 0};
     if (length >= 2) {
         memcpy(&cf.code, src, 2);
         cf = {cond_byte_swap<uint16_t>(cf.code), src + 2, length - 2};
         if (cf.code < 1000 || cf.code > 4999 || (cf.code > 1011 && cf.code < 4000) ||
             (cf.code >= 1004 && cf.code <= 1006) || !isValidUtf8((unsigned char *) cf.message, cf.length)) {
-            return {};
+            /* Even though we got a WebSocket close frame, it in itself is abnormal */
+            return {1006, nullptr, 0};
         }
     }
     return cf;
 }
 
 static inline size_t formatClosePayload(char *dst, uint16_t code, const char *message, size_t length) {
-    if (code) {
+    /* We could have more strict checks here, but never append code 0 or 1005 or 1006 */
+    if (code && code != 1005 && code != 1006) {
         code = cond_byte_swap<uint16_t>(code);
         memcpy(dst, &code, 2);
         /* It is invalid to pass nullptr to memcpy, even though length is 0 */
@@ -219,7 +230,7 @@ static inline size_t formatMessage(char *dst, const char *src, size_t length, Op
     char mask[4];
     if (!isServer) {
         dst[1] |= 0x80;
-        uint32_t random = rand();
+        uint32_t random = (uint32_t) rand();
         memcpy(mask, &random, 4);
         memcpy(dst + headerLength, &random, 4);
         headerLength += 4;
@@ -307,7 +318,7 @@ protected:
         wState->state.lastFin = isFin(src);
 
         if (Impl::refusePayloadLength(payLength, wState, user)) {
-            Impl::forceClose(wState, user);
+            Impl::forceClose(wState, user, ERR_TOO_BIG_MESSAGE);
             return true;
         }
 
@@ -351,9 +362,9 @@ protected:
     static inline bool consumeContinuation(char *&src, unsigned int &length, WebSocketState<isServer> *wState, void *user) {
         if (wState->remainingBytes <= length) {
             if (isServer) {
-                int n = wState->remainingBytes >> 2;
+                unsigned int n = wState->remainingBytes >> 2;
                 unmaskInplace(src, src + n * 4, wState->mask);
-                for (int i = 0, s = wState->remainingBytes % 4; i < s; i++) {
+                for (unsigned int i = 0, s = wState->remainingBytes % 4; i < s; i++) {
                     src[n * 4 + i] ^= wState->mask[i];
                 }
             }

@@ -21,6 +21,9 @@
 
 #if defined(LIBUS_USE_EPOLL) || defined(LIBUS_USE_KQUEUE)
 
+/* Cannot include this one on Windows */
+#include <unistd.h>
+
 #ifdef LIBUS_USE_EPOLL
 #define GET_READY_POLL(loop, index) (struct us_poll_t *) loop->ready_polls[index].data.ptr
 #define SET_READY_POLL(loop, index, poll) loop->ready_polls[index].data.ptr = poll
@@ -329,8 +332,8 @@ void us_timer_set(struct us_timer_t *t, void (*cb)(struct us_timer_t *t), int ms
     internal_cb->cb = (void (*)(struct us_internal_callback_t *)) cb;
 
     struct itimerspec timer_spec = {
-        {repeat_ms / 1000, ((long)repeat_ms * 1000000) % 1000000000},
-        {ms / 1000, ((long)ms * 1000000) % 1000000000}
+        {repeat_ms / 1000, (long) (repeat_ms % 1000) * (long) 1000000},
+        {ms / 1000, (long) (ms % 1000) * (long) 1000000}
     };
 
     timerfd_settime(us_poll_fd((struct us_poll_t *) t), 0, &timer_spec, NULL);
