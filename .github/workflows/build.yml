@@ -1,0 +1,50 @@
+# With reference from https://github.com/Drewol/unnamed-sdvx-clone/blob/b3e9c82f54e4dae4d5a1571b0843335bacfd8f5e/.github/workflows/build.yml
+
+name: Build
+
+on:
+  push:
+    branches: [gh-actions]
+  pull_request:
+    branches: [gh-actions]
+
+jobs:
+    windows_build:
+        name: Windows build
+        runs-on: windows-latest
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
+        steps:
+            - name: Checkout repo
+              uses: actions/checkout@v2
+
+            - name: Cache vcpkg
+              uses: actions/cache@v1
+              with:
+                path: vcpkg
+                key: ${{ runner.os }}-vcpkg-${{ hashFiles('build.windows') }}
+              
+            - name: vcpkg
+              run: |
+                if(!(Test-Path .\vcpkg))
+                {
+                git clone https://github.com/microsoft/vcpkg.git
+                cd vcpkg
+                .\bootstrap-vcpkg.bat
+                .\vcpkg.exe integrate install
+                .\vcpkg.exe install '@${{ github.workspace }}/build.windows'
+                }
+
+            - name: cmake
+              run: cmake -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake -G "Visual Studio 16 2019" -A x64 .
+
+            - name: Setup MSBuild.exe
+              uses: microsoft/Setup-MSBuild@v1.0.2
+
+            - name: MSBuild
+              run: msbuild brokenithm-kb.sln -p:Configuration=Release /m /verbosity:minimal
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@master
+              with:
+                name: Game
+                path: bin
