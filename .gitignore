@@ -1,5 +1,4 @@
 .vs/
 build/
-res/chart/*
-!res/chart/.gitkeep
 dist/
+src/src/version.rc

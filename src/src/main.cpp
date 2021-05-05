@@ -5,6 +5,8 @@
 #include "KeyboardSimulator.hpp"
 #include "Utils.hpp"
 
+#include "version.rc"
+
 std::string banner = R"(
  _               _              _ _   _                     _    _     
 | |__  _ __ ___ | | _____ _ __ (_) |_| |__  _ __ ___       | | _| |__  
@@ -12,8 +14,7 @@ std::string banner = R"(
 | |_) | | | (_) |   <  __/ | | | | |_| | | | | | | | |_____|   <| |_) |
 |_.__/|_|  \___/|_|\_\___|_| |_|_|\__|_| |_|_| |_| |_|     |_|\_\_.__/ 
 =======================================================================
-Brokenithm controller for keyboard output, by github/@4yn
-)";
+Brokenithm controller for keyboard output, by @4yn, v)" VERSION_STRING;
 
 std::string epilog = R"(
 Open the URL displayed on a touch-enabled device (big iPads recommended)
@@ -24,13 +25,13 @@ correct firewall access is granted.
 Built for use with simulators like Seaurchin and SUSPlayer.
 Keyboard output follows the Yuancon specification.
 
-Find more options with: ./brokenithm-kb.exe -h
-)";
+Read more at https://github.com/4yn/brokenithm-kb)";
 
 int main(int argc, char **argv)
 {
     optparse::OptionParser parser = optparse::OptionParser()
                                         .description(banner.substr(1))
+                                        .version(VERSION_STRING)
                                         .epilog(epilog.substr(1));
 
     parser.add_option("-p", "--port").dest("port").type("int").set_default(1116).help("Port to listen on (1-65535)");
