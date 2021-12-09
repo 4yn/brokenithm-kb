@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 set(CMAKE_SYSTEM_VERSION "10.0.19041")
 
-project(brokenithm-kb VERSION 0.1.1)
+project(brokenithm-kb VERSION 0.1.2)
 
 message("Using kit " "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
 

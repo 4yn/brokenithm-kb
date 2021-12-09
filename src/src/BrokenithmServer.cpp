@@ -176,7 +176,7 @@ void BrokenithmServer::Impl::start_server()
 
                          for (int i = 0; i < 38; i++)
                          {
-                             if (message[i] == '1')
+                             if (message[i+1] == '1')
                              {
                                  m_controller_state.add_button(i);
                              }

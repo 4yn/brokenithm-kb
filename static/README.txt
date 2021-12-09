@@ -19,6 +19,9 @@ Read more at https://github.com/4yn/brokenithm-kb
 CHANGELOG
 =========
 
+v0.1.2
+- Fixed broken leftmost key and air 6
+
 v0.1.1
 - Removed openssl/zlib bloat
 
