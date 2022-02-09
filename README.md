@@ -2,6 +2,8 @@
 
 > Because $300 plus shipping and a two month wait is too painful for a tasoller
 
+> psst. check out [slidershim](https://github.com/4yn/slidershim), its a souped-up version of brokenithm
+
 Run this together alongside SUSPlayer or your other favourite sliding universal score simulator to play with a tablet device.
 
 [Demo play](https://www.youtube.com/watch?v=xhxCB26Jqf4)
